@@ -91,6 +91,54 @@ else
         @test MongrelDB.count(db, table) == 2
     end
 
+    @testset "live: range query returns only rows within the bounds" begin
+        db = MongrelDB.connect(SERVER_URL)
+        table = "julia_range_" * unique_suffix
+        MongrelDB.createTable(db, table, make_columns())
+        MongrelDB.put(db, table, Dict(1 => 1, 2 => "a", 3 => 50.0))
+        MongrelDB.put(db, table, Dict(1 => 2, 2 => "b", 3 => 75.0))
+        MongrelDB.put(db, table, Dict(1 => 3, 2 => "c", 3 => 90.0))
+        MongrelDB.put(db, table, Dict(1 => 4, 2 => "d", 3 => 100.0))
+        # Only scores >= 80 should come back (90 and 100) - assert the count.
+        rows, _ = MongrelDB.query(db, table,
+            [MongrelDB.condition("range", Dict("column" => 3, "min" => 80.0))])
+        @test length(rows) == 2
+    end
+
+    @testset "live: schemaFor on nonexistent table raises not_found" begin
+        db = MongrelDB.connect(SERVER_URL)
+        err = try
+            MongrelDB.schemaFor(db, "nonexistent_table_xyz")
+            nothing
+        catch e
+            e
+        end
+        @test err isa MongrelDB.MongrelDBError
+        @test err.kind == :not_found
+    end
+
+    @testset "live: idempotent transaction does not duplicate the row" begin
+        db = MongrelDB.connect(SERVER_URL)
+        table = "julia_idem_" * unique_suffix
+        MongrelDB.createTable(db, table, make_columns())
+        # First idempotent commit inserts the row.
+        MongrelDB.transaction(db, [
+            Dict("put" => Dict("table" => table,
+                "cells" => Any[1, 100, 2, "order", 3, 1.0])),
+        ], "order-100-create")
+        @test MongrelDB.count(db, table) == 1
+        # A second, identical commit with the SAME key must not duplicate it.
+        try
+            MongrelDB.transaction(db, [
+                Dict("put" => Dict("table" => table,
+                    "cells" => Any[1, 100, 2, "order", 3, 1.0])),
+            ], "order-100-create")
+        catch
+            # The daemon may reject the duplicate; the row count is what matters.
+        end
+        @test MongrelDB.count(db, table) == 1
+    end
+
     @testset "live: schema lists the created table" begin
         db = MongrelDB.connect(SERVER_URL)
         table = "julia_schema_" * unique_suffix

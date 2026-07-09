@@ -1,0 +1,17 @@
+name = "MongrelDB"
+uuid = "a3b1c2d4-e5f6-7890-abcd-ef0123456789"
+authors = ["Visorcraft <noreply@visorcraft.com>"]
+version = "0.1.0"
+
+[deps]
+# Pure stdlib only: Sockets is part of Base, and JSON is vendored in
+# src/JSON.jl, so there are no external package dependencies to install.
+
+[compat]
+julia = "1.9"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-d05778033a6d"
+
+[targets]
+test = ["Test"]

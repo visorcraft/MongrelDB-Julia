@@ -1,0 +1,29 @@
+# Julia build artifacts
+*.jl.*.cov
+*.jl.mem
+deps/deps.jl
+
+# Manifest is regenerated per environment; keep Project.toml under source.
+Manifest.toml
+
+# Test/coverage output
+lcov.info
+*.cov
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Agent / assistant instruction files are workspace-local, never published
+AGENTS.md
+CLAUDE.md
+.cursorrules
+.zcode/

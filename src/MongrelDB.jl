@@ -325,6 +325,14 @@ function _request(client::Client, method::String, path::String,
                   payload::Union{Dict,Nothing}=nothing)
     status, body = http_request(client, method, path, payload)
 
+    # Cap the response body at 256 MB so a runaway query or a misbehaving
+    # daemon cannot exhaust memory.
+    max_bytes = 256 * 1024 * 1024  # 268435456 bytes
+    if sizeof(body) > max_bytes
+        throw(MongrelDBError(:query,
+            "response body exceeds $max_bytes bytes ($(sizeof(body)) bytes)"))
+    end
+
     if !(200 <= status < 300)
         message, code, op_index = parse_error_envelope(body)
         if isempty(message)
@@ -431,11 +439,13 @@ end
 """
     sql(client, statement)
 
-Execute SQL. Returns the decoded JSON when the daemon answers in JSON;
-otherwise `nothing` (e.g. for INSERTs or Arrow IPC responses).
+Execute SQL, requesting the JSON result format. A SELECT returns a JSON array
+of row objects keyed by column name; statements like INSERT/UPDATE that
+produce no rows return `nothing`.
 """
 function sql(client::Client, statement::String)
-    _request(client, "POST", "sql", Dict("sql" => statement))
+    _request(client, "POST", "sql",
+        Dict("sql" => statement, "format" => "json"))
 end
 
 """

@@ -4,8 +4,10 @@ authors = ["Visorcraft <noreply@visorcraft.com>"]
 version = "0.1.0"
 
 [deps]
-# Pure stdlib only: Sockets is part of Base, and JSON is vendored in
-# src/JSON.jl, so there are no external package dependencies to install.
+# Sockets is a Julia standard library (not part of Base), so it must be listed
+# here to satisfy `import Sockets`. JSON is vendored in src/JSON.jl, so there
+# are no external/registry package dependencies to install.
+Sockets = "6462fe0b-24de-5619-8697-dd941f90decc"
 
 [compat]
 julia = "1.9"

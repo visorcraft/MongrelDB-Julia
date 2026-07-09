@@ -30,6 +30,36 @@ export Client, MongrelDBError, connect, condition, health, tables, createTable, 
        transaction, JSON
 
 # ---------------------------------------------------------------------------
+# URL helpers
+# ---------------------------------------------------------------------------
+
+# Percent-encode a single path segment so table names containing '/', '?',
+# '#', or spaces cannot inject extra segments or break routing. Only RFC
+# 3986 unreserved characters pass through unencoded.
+function _encode_segment(seg::AbstractString)::String
+    out = IOBuffer()
+    for c in seg
+        if (c in 'A':'Z') || (c in 'a':'z') || (c in '0':'9') ||
+           c == '-' || c == '_' || c == '.' || c == '~'
+            write(out, c)
+        else
+            for b in codeunits(String(c))
+                write(out, '%', uppercase(string(b, base=16, pad=2)))
+            end
+        end
+    end
+    return String(take!(out))
+end
+
+# Reject CR/LF in a string to prevent CRLF injection into HTTP headers.
+function _reject_crlf(value::AbstractString, field::AbstractString)
+    if occursin('\r', value) || occursin('\n', value)
+        throw(MongrelDBError(:query,
+            "illegal CR/LF in $field value"))
+    end
+end
+
+# ---------------------------------------------------------------------------
 # Exception type
 # ---------------------------------------------------------------------------
 
@@ -161,8 +191,11 @@ function connect(url::String; token::Union{String,Nothing}=nothing,
     host, port = parse_url(rstrip(url, '/'))
     auth_header = nothing
     if token !== nothing
+        _reject_crlf(token, "token")
         auth_header = "Bearer " * token
     elseif username !== nothing
+        _reject_crlf(username, "username")
+        password !== nothing && _reject_crlf(password, "password")
         creds = username * ":" * (password === nothing ? "" : password)
         auth_header = "Basic " * base64encode(creds)
     end
@@ -346,14 +379,17 @@ end
 
 """Drop a table by name."""
 function dropTable(client::Client, name::String)
-    _request(client, "DELETE", "tables/" * name)
+    _request(client, "DELETE", "tables/" * _encode_segment(name))
     return nothing
 end
 
 """Row count for a table."""
 function Base.count(client::Client, table::String)::Int
-    data = _request(client, "GET", "tables/" * table * "/count")
-    data isa Dict ? Int(get(data, "count", 0)) : 0
+    data = _request(client, "GET", "tables/" * _encode_segment(table) * "/count")
+    if data isa Dict && haskey(data, "count") && data["count"] isa Number
+        return Int(data["count"])
+    end
+    throw(MongrelDBError(:query, "malformed count response from server"))
 end
 
 """Insert a row. `cells` maps column id to value."""
@@ -440,7 +476,7 @@ end
 
 """Descriptor for a single table."""
 function schemaFor(client::Client, table::String)::Dict{String,Any}
-    data = _request(client, "GET", "kit/schema/" * table)
+    data = _request(client, "GET", "kit/schema/" * _encode_segment(table))
     data isa Dict ? data : Dict{String,Any}()
 end
 

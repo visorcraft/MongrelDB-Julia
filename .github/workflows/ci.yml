@@ -83,7 +83,7 @@ jobs:
         id: server-cache
         with:
           path: /tmp/mongreldb-server
-          key: mongreldb-server-${{ runner.os }}-0.44.1
+          key: mongreldb-server-${{ runner.os }}-0.44.1-json
 
       - name: Instantiate project
         # Resolve the Sockets stdlib (listed in [deps]) into a Manifest before

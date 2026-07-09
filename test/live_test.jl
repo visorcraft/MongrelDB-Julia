@@ -100,8 +100,17 @@ else
         MongrelDB.put(db, table, Dict(1 => 3, 2 => "c", 3 => 90.0))
         MongrelDB.put(db, table, Dict(1 => 4, 2 => "d", 3 => 100.0))
         # Only scores >= 80 should come back (90 and 100) - assert the count.
+        # The `amount` column is float64, so use `range_f64` (plain `range`
+        # expects an i64 bound and rejects floats). range_f64 requires both
+        # bounds (min/max) and the inclusivity flags (min_inclusive/max_inclusive).
         rows, _ = MongrelDB.query(db, table,
-            [MongrelDB.condition("range", Dict("column" => 3, "min" => 80.0))])
+            [MongrelDB.condition("range_f64", Dict(
+                "column" => 3,
+                "min" => 80.0,
+                "max" => 200.0,
+                "min_inclusive" => true,
+                "max_inclusive" => true,
+            ))])
         @test length(rows) == 2
     end
 
@@ -121,18 +130,21 @@ else
         db = MongrelDB.connect(SERVER_URL)
         table = "julia_idem_" * unique_suffix
         MongrelDB.createTable(db, table, make_columns())
+        # Idempotency key must be unique per run so a stale key from an earlier
+        # run can't be replayed against this table.
+        key = "order-100-create-" * unique_suffix
         # First idempotent commit inserts the row.
         MongrelDB.transaction(db, [
             Dict("put" => Dict("table" => table,
                 "cells" => Any[1, 100, 2, "order", 3, 1.0])),
-        ], "order-100-create")
+        ], key)
         @test MongrelDB.count(db, table) == 1
         # A second, identical commit with the SAME key must not duplicate it.
         try
             MongrelDB.transaction(db, [
                 Dict("put" => Dict("table" => table,
                     "cells" => Any[1, 100, 2, "order", 3, 1.0])),
-            ], "order-100-create")
+            ], key)
         catch
             # The daemon may reject the duplicate; the row count is what matters.
         end

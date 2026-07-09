@@ -116,6 +116,15 @@ jobs:
           MONGRELDB_URL: http://127.0.0.1:8453
         run: julia --project=. test/live_test.jl
 
+      - name: Run examples
+        env:
+          MONGRELDB_URL: http://127.0.0.1:8453
+        run: |
+          for ex in examples/*.jl; do
+            echo "=== Running $ex ==="
+            julia --project=. "$ex" || { echo "FAILED: $ex"; exit 1; }
+          done
+
       - name: Dump server log on failure
         if: failure()
         run: cat /tmp/mongreldb-server.log

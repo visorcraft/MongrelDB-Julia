@@ -12,6 +12,9 @@ const db = MongrelDB.connect(url)
 
 println("health: ", MongrelDB.health(db))
 
+# Per-run unique suffix so concurrent/CI runs never collide on a table name.
+table = "julia_orders_example_$(time_ns())"
+
 # The daemon requires JSON booleans for primary_key / nullable.
 T, F = true, false
 columns = [
@@ -20,24 +23,30 @@ columns = [
     Dict("id" => 3, "name" => "amount",   "ty" => "float64", "primary_key" => F, "nullable" => F),
 ]
 
-table = "julia_orders_example"
-MongrelDB.createTable(db, table, columns)
+try
+    MongrelDB.createTable(db, table, columns)
 
-# Cells map column id to value.
-MongrelDB.put(db, table, Dict(1 => 1, 2 => "Alice", 3 => 99.50))
-MongrelDB.put(db, table, Dict(1 => 2, 2 => "Bob",   3 => 150.00))
+    # Cells map column id to value.
+    MongrelDB.put(db, table, Dict(1 => 1, 2 => "Alice", 3 => 99.50))
+    MongrelDB.put(db, table, Dict(1 => 2, 2 => "Bob",   3 => 150.00))
 
-# Upsert updates on PK conflict.
-MongrelDB.upsert(db, table, Dict(1 => 1, 2 => "Alice", 3 => 120.00), Dict(3 => 120.00))
+    # Upsert updates on PK conflict.
+    MongrelDB.upsert(db, table, Dict(1 => 1, 2 => "Alice", 3 => 120.00), Dict(3 => 120.00))
 
-println("count: ", MongrelDB.count(db, table))
+    println("count: ", MongrelDB.count(db, table))
 
-# Query with a native index condition (primary key match).
-rows, _ = MongrelDB.query(db, table, [MongrelDB.condition("pk", Dict("value" => 1))])
-for r in rows
-    println("row: ", join(map(string, r["cells"]), ", "))
+    # Query with a native index condition (primary key match).
+    rows, _ = MongrelDB.query(db, table, [MongrelDB.condition("pk", Dict("value" => 1))])
+    for r in rows
+        println("row: ", join(map(string, r["cells"]), ", "))
+    end
+
+    # Run SQL.
+    MongrelDB.sql(db, "UPDATE $table SET amount = 200.0 WHERE customer = 'Bob'")
+    println("count after sql: ", MongrelDB.count(db, table))
+finally
+    # Guaranteed cleanup: ALWAYS drop the table, even on error, so CI runs
+    # never leave an orphan table behind.
+    MongrelDB.dropTable(db, table)
+    println("dropped: ", table)
 end
-
-# Run SQL.
-MongrelDB.sql(db, "UPDATE $table SET amount = 200.0 WHERE customer = 'Bob'")
-println("count after sql: ", MongrelDB.count(db, table))

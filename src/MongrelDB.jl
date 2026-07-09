@@ -17,11 +17,17 @@
 module MongrelDB
 
 import Sockets
+
+# The vendored JSON encoder/decoder lives in src/JSON.jl as a submodule.
+# Include it (defining `module JSON`) before importing the name so the
+# binding is declared at import time; otherwise precompilation fails with
+# "Imported binding MongrelDB.JSON was undeclared at import time".
+include("JSON.jl")
 import .JSON
 
 export Client, MongrelDBError, connect, condition, health, tables, createTable, dropTable,
        count, put, upsert, delete, deleteByPk, sql, query, schema, schemaFor,
-       transaction
+       transaction, JSON
 
 # ---------------------------------------------------------------------------
 # Exception type
@@ -117,10 +123,12 @@ end
 
 # Parse a "http://host:port" URL into (host, port). Plain HTTP only; TLS must
 # terminate in a reverse proxy in front of the daemon.
-function parse_url(url::String)::Tuple{String,UInt16}
+function parse_url(url::AbstractString)::Tuple{String,UInt16}
     rest = url
     if startswith(rest, "http://")
-        rest = rest[7:end]
+        # "http://" is 7 characters; skip past the full scheme (index 8 onward)
+        # so the leading "/" of the authority is not retained.
+        rest = rest[8:end]
     elseif startswith(rest, "https://")
         throw(MongrelDBError(:connection,
             "HTTPS is not supported by the built-in transport; terminate TLS in a reverse proxy"))
@@ -132,10 +140,10 @@ function parse_url(url::String)::Tuple{String,UInt16}
     end
     colon = findlast(':', rest)
     if colon !== nothing
-        host = rest[1:colon - 1]
+        host = String(rest[1:colon - 1])
         port = parse(UInt16, rest[colon + 1:end])
     else
-        host = rest
+        host = String(rest)
         port = UInt16(80)
     end
     return host, port
@@ -238,12 +246,13 @@ function parse_http_response(raw::String)
         body_start = last(sep) + 1
     end
 
-    # Status line is the first line.
+    # Status line is the first line. `findfirst` returns a UnitRange over the
+    # matched bytes, so take `first(...)` before subtracting.
     first_line_end = findfirst("\r\n", raw)
     if first_line_end === nothing
         first_line_end = findfirst("\n", raw)
     end
-    status_line = first_line_end === nothing ? raw : raw[1:first_line_end - 1]
+    status_line = first_line_end === nothing ? raw : raw[1:first(first_line_end) - 1]
     m = match(r"HTTP/\d\.\d (\d+)", status_line)
     status = m === nothing ? 0 : parse(Int, m.captures[1])
 
@@ -417,9 +426,11 @@ function query(client::Client, table::String,
             truncated === true)
 end
 
-# Convenience overload: query without conditions.
-query(client::Client, table::String; kwargs...) =
-    query(client, table, Dict[]; kwargs...)
+# Note: there is no separate `query(client, table; kwargs...)` convenience
+# overload. The main method already defaults `conditions` to `Dict[]`, so
+# `query(c, "t")` and `query(c, "t"; projection=...)` resolve to it directly.
+# Defining a keyword-only overload triggered a method-overwrite precompilation
+# error ("Method definition query(Client, String) ... overwritten").
 
 """Full schema catalog (dict of table name -> descriptor)."""
 function schema(client::Client)::Dict{String,Any}

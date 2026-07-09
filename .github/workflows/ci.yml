@@ -40,10 +40,16 @@ jobs:
           key: ${{ runner.os }}-julia-${{ matrix.julia }}-${{ env.cache-name }}-${{ hashFiles('Project.toml') }}
           restore-keys: ${{ runner.os }}-julia-${{ matrix.julia }}-${{ env.cache-name }}-
 
+      - name: Instantiate project
+        # Sockets and Test are Julia stdlibs. They are not in the General
+        # registry, so `julia-runtest` (which runs `Pkg.test()` and re-resolves
+        # [extras] in a sandbox against the registry) fails with
+        # "expected package ... to be registered". Instantiate the project
+        # directly instead, then run the test entrypoint in this environment.
+        run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
+
       - name: Run unit tests
-        uses: julia-actions/julia-runtest@v1
-        with:
-          project: '.'
+        run: julia --project=. test/runtests.jl
 
   live:
     # The layer that catches client/server contract drift. Downloads a
@@ -78,6 +84,11 @@ jobs:
         with:
           path: /tmp/mongreldb-server
           key: mongreldb-server-${{ runner.os }}-0.44.1
+
+      - name: Instantiate project
+        # Resolve the Sockets stdlib (listed in [deps]) into a Manifest before
+        # running the live test entrypoint, which loads MongrelDB directly.
+        run: julia --project=. -e 'import Pkg; Pkg.instantiate()'
 
       - name: Download mongreldb-server
         if: steps.server-cache.outputs.cache-hit != 'true'

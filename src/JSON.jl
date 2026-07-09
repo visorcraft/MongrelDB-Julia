@@ -253,27 +253,26 @@ function parse_string(b, pos)
 end
 
 # Read one UTF-8 codepoint starting at pos. Returns (Char, byte_length).
+# Each continuation byte is masked with 0x3f *before* shifting — `<<` binds
+# tighter than `&` in Julia, so the masks must be parenthesized.
 @inline function read_utf8(b, pos)
     @inbounds b1 = b[pos]
     if b1 < 0x80
         return Char(b1), 1
-    elseif b1 >> 5 == 0b110
-        @inbounds cp = ((UInt32(b1) & 0x1f) << 12) |
-                       (UInt32(b[pos + 1]) & 0x3f) << 6 |
+    elseif b1 >> 5 == 0b110   # 2-byte: 0b110xxxxx + 1 continuation byte
+        @inbounds cp = ((UInt32(b1) & 0x1f) << 6) |
+                       (UInt32(b[pos + 1]) & 0x3f)
+        return Char(cp), 2
+    elseif b1 >> 4 == 0b1110   # 3-byte: 0b1110xxxx + 2 continuation bytes
+        @inbounds cp = ((UInt32(b1) & 0x0f) << 12) |
+                       ((UInt32(b[pos + 1]) & 0x3f) << 6) |
                        (UInt32(b[pos + 2]) & 0x3f)
         return Char(cp), 3
-    elseif b1 >> 4 == 0b1110
-        @inbounds cp = ((UInt32(b1) & 0x0f) << 18) |
-                       (UInt32(b[pos + 1]) & 0x3f) << 12 |
-                       (UInt32(b[pos + 2]) & 0x3f) << 6 |
+    else   # 4-byte: 0b11110xxx + 3 continuation bytes
+        @inbounds cp = ((UInt32(b1) & 0x07) << 18) |
+                       ((UInt32(b[pos + 1]) & 0x3f) << 12) |
+                       ((UInt32(b[pos + 2]) & 0x3f) << 6) |
                        (UInt32(b[pos + 3]) & 0x3f)
-        return Char(cp), 4
-    else   # 4-byte
-        @inbounds cp = ((UInt32(b1) & 0x07) << 24) |
-                       (UInt32(b[pos + 1]) & 0x3f) << 18 |
-                       (UInt32(b[pos + 2]) & 0x3f) << 12 |
-                       (UInt32(b[pos + 3]) & 0x3f) << 6 |
-                       (UInt32(b[pos + 4]) & 0x3f)
         return Char(cp), 4
     end
 end

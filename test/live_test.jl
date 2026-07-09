@@ -25,7 +25,10 @@ end
 if !server_reachable()
     @info "Skipping live tests: MONGRELDB_URL not reachable at $SERVER_URL"
 else
-    unique_suffix = string(time())
+    # `time()` returns a Float64 (e.g. 1.78e9); stringify it as an integer so
+    # the table name has no '.' — a dot breaks the SQL parser in the
+    # `INSERT INTO <table>` round-trip test below.
+    unique_suffix = string(round(Int, time()))
 
     T = true
     F = false

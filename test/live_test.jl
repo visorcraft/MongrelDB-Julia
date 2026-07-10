@@ -56,13 +56,9 @@ else
             [MongrelDB.condition("pk", Dict("value" => 2))])
         @test length(rows) >= 1
         # The returned row must carry primary key 2. Confirm via SQL JSON mode,
-        # where rows are keyed by column name. An old server ignores the
-        # requested JSON format and answers with Arrow IPC bytes, so sql()
-        # returns nothing - only verify row content when JSON mode worked.
+        # where rows are keyed by column name.
         pk_rows = MongrelDB.sql(db, "SELECT id FROM $table WHERE id = 2")
-        if pk_rows !== nothing && !isempty(pk_rows)
-            @test pk_rows[1]["id"] == 2
-        end
+        @test pk_rows[1]["id"] == 2
     end
 
     @testset "live: upsert updates on PK conflict" begin
@@ -73,13 +69,9 @@ else
         MongrelDB.upsert(db, table, Dict(1 => 1, 2 => "alpha", 3 => 99.0), Dict(3 => 99.0))
         @test MongrelDB.count(db, table) == 1
         # Query the row back and verify the upserted value landed. SQL JSON mode
-        # returns rows keyed by column name. An old server ignores the requested
-        # JSON format and answers with Arrow IPC bytes, so sql() returns nothing
-        # - only verify row content when JSON mode worked.
+        # returns rows keyed by column name.
         up_rows = MongrelDB.sql(db, "SELECT amount FROM $table WHERE id = 1")
-        if up_rows !== nothing && !isempty(up_rows)
-            @test up_rows[1]["amount"] == 99.0
-        end
+        @test up_rows[1]["amount"] == 99.0
     end
 
     @testset "live: transaction commits multiple ops atomically" begin
@@ -106,15 +98,10 @@ else
         MongrelDB.sql(db, "INSERT INTO $table (id, label, amount) VALUES (2, 'beta', 2.0)")
         @test MongrelDB.count(db, table) == 2
         # JSON mode makes SELECT return rows as JSON objects (column names as
-        # keys). Verify both rows come back with the right primary keys. An old
-        # server ignores the requested JSON format and answers with Arrow IPC
-        # bytes, so sql() returns nothing - only verify row content when JSON
-        # mode worked.
+        # keys). Verify both rows come back with the right primary keys.
         selected = MongrelDB.sql(db, "SELECT id FROM $table ORDER BY id")
-        if selected !== nothing && !isempty(selected)
-            @test length(selected) == 2
-            @test [r["id"] for r in selected] == [1, 2]
-        end
+        @test length(selected) == 2
+        @test [r["id"] for r in selected] == [1, 2]
     end
 
     @testset "live: range query returns only rows within the bounds" begin
@@ -139,15 +126,10 @@ else
             ))])
         @test length(rows) == 2
         # Only rows with id 3 (amount 90) and 4 (amount 100) qualify. Confirm
-        # their exact PK values via SQL JSON mode (rows keyed by column name). An
-        # old server ignores the requested JSON format and answers with Arrow IPC
-        # bytes, so sql() returns nothing - only verify row content when JSON
-        # mode worked.
+        # their exact PK values via SQL JSON mode (rows keyed by column name).
         selected = MongrelDB.sql(db, "SELECT id FROM $table WHERE amount >= 80.0 ORDER BY id")
-        if selected !== nothing && !isempty(selected)
-            @test length(selected) == 2
-            @test [r["id"] for r in selected] == [3, 4]
-        end
+        @test length(selected) == 2
+        @test [r["id"] for r in selected] == [3, 4]
     end
 
     @testset "live: schemaFor on nonexistent table raises not_found" begin

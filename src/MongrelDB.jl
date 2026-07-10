@@ -347,8 +347,9 @@ function _request(client::Client, method::String, path::String,
     end
 
     isempty(body) && return nothing
-    # SQL SELECT returns Arrow IPC bytes; guard against non-JSON so sql()
-    # stays best-effort.
+    # The client requests the JSON result format; guard against a non-JSON
+    # body (e.g. a legacy server that ignored the format hint) so sql() stays
+    # best-effort and returns nothing instead of raising.
     return try
         JSON.decode(body)
     catch

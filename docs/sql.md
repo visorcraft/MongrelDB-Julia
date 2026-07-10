@@ -11,9 +11,10 @@ MongrelDB.sql(db, "INSERT INTO orders (id, customer, amount) VALUES (99, 'Zoe', 
 MongrelDB.sql(db, "CREATE TABLE archive AS SELECT * FROM orders WHERE amount > 500")
 ```
 
-The `/sql` endpoint returns Arrow IPC bytes for rich SELECTs, and an empty body
-for INSERT/UPDATE/DELETE. In those cases `sql()` returns `nothing`. For typed,
-JSON-shaped reads, prefer the native [query builder](queries.md).
+The client requests the JSON result format (`"format" => "json"`), so a SELECT
+returns its rows decoded into a Julia data structure (a vector of row objects
+keyed by column name). Statements that produce no rows (INSERT/UPDATE/DELETE,
+or an empty result set) return `nothing`.
 
 ## DataFusion features
 

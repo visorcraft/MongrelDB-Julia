@@ -56,9 +56,15 @@ T, F = true, false
 
 # Create a table.
 MongrelDB.createTable(db, "orders", [
-    Dict("id" => 1, "name" => "id",       "ty" => "int64",   "primary_key" => T, "nullable" => F),
-    Dict("id" => 2, "name" => "customer", "ty" => "varchar", "primary_key" => F, "nullable" => F),
-    Dict("id" => 3, "name" => "amount",   "ty" => "float64", "primary_key" => F, "nullable" => F),
+    Dict("id" => 1, "name" => "id",         "ty" => "int64",          "primary_key" => T, "nullable" => F),
+    Dict("id" => 2, "name" => "customer",   "ty" => "varchar",        "primary_key" => F, "nullable" => F),
+    Dict("id" => 3, "name" => "amount",     "ty" => "float64",        "primary_key" => F, "nullable" => F),
+    Dict("id" => 4, "name" => "status",     "ty" => "enum",
+         "enum_variants" => ["draft", "paid", "shipped"],
+         "primary_key" => F, "nullable" => F),
+    Dict("id" => 5, "name" => "created_at", "ty" => "timestamp_nanos",
+         "default_value" => "now",
+         "primary_key" => F, "nullable" => F),
 ])
 
 # Insert rows. Cells map column id to value.

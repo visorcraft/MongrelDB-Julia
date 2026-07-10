@@ -15,23 +15,40 @@ println("health: ", MongrelDB.health(db))
 # Per-run unique suffix so concurrent/CI runs never collide on a table name.
 table = "julia_orders_example_$(time_ns())"
 
-# The daemon requires JSON booleans for primary_key / nullable.
+# The daemon requires JSON booleans for primary_key / nullable. Per-column
+# extras like `enum_variants` and `default_value` (a legacy alias for the
+# engine's `default_expr`) are passed through verbatim — the client does not
+# interpret them, so any key the engine accepts lands on the wire unchanged.
 T, F = true, false
 columns = [
-    Dict("id" => 1, "name" => "id",       "ty" => "int64",   "primary_key" => T, "nullable" => F),
-    Dict("id" => 2, "name" => "customer", "ty" => "varchar", "primary_key" => F, "nullable" => F),
-    Dict("id" => 3, "name" => "amount",   "ty" => "float64", "primary_key" => F, "nullable" => F),
+    Dict("id" => 1, "name" => "id",         "ty" => "int64",          "primary_key" => T, "nullable" => F),
+    Dict("id" => 2, "name" => "customer",   "ty" => "varchar",        "primary_key" => F, "nullable" => F),
+    Dict("id" => 3, "name" => "amount",     "ty" => "float64",        "primary_key" => F, "nullable" => F),
+    Dict("id" => 4, "name" => "status",     "ty" => "enum",
+         "enum_variants" => ["draft", "paid", "shipped"],
+         "primary_key" => F, "nullable" => F),
+    Dict("id" => 5, "name" => "created_at", "ty" => "timestamp_nanos",
+         "default_value" => "now",
+         "primary_key" => F, "nullable" => F),
 ]
 
 try
     MongrelDB.createTable(db, table, columns)
 
-    # Cells map column id to value.
-    MongrelDB.put(db, table, Dict(1 => 1, 2 => "Alice", 3 => 99.50))
-    MongrelDB.put(db, table, Dict(1 => 2, 2 => "Bob",   3 => 150.00))
+    # Cells map column id to value. Column 4 (`status`) is set to one of the
+    # declared `enum_variants`; column 5 (`created_at`) gets an explicit
+    # integer nanos value here, even though the schema declares a
+    # `default_value => "now"` server-side (the engine's default only fires
+    # for writes that *omit* the column, so a SQL `INSERT` without column 5
+    # would let the default land at INSERT time).
+    now_ns = UInt64(time() * 1e9)
+    MongrelDB.put(db, table, Dict(1 => 1, 2 => "Alice", 3 =>  99.50, 4 => "paid",    5 => now_ns))
+    MongrelDB.put(db, table, Dict(1 => 2, 2 => "Bob",   3 => 150.00, 4 => "shipped", 5 => now_ns))
 
-    # Upsert updates on PK conflict.
-    MongrelDB.upsert(db, table, Dict(1 => 1, 2 => "Alice", 3 => 120.00), Dict(3 => 120.00))
+    # Upsert updates on PK conflict (only amount, leaving the rest).
+    MongrelDB.upsert(db, table,
+        Dict(1 => 1, 2 => "Alice", 3 => 120.00, 4 => "paid", 5 => now_ns),
+        Dict(3 => 120.00))
 
     println("count: ", MongrelDB.count(db, table))
 

@@ -4,5 +4,6 @@
 #   julia --project=. test/runtests.jl
 
 include("json_test.jl")
+include("wire_shape_test.jl")
 
 include("live_test.jl")

@@ -386,8 +386,17 @@ end
 """Create a table. Returns the new table id, or 0 if none was reported."""
 function createTable(client::Client, name::String, columns)::Int
     data = _request(client, "POST", "kit/create_table",
-        Dict("name" => name, "columns" => columns))
+        _create_table_body(name, columns))
     data isa Dict ? Int(get(data, "table_id", 0)) : 0
+end
+
+# Build the JSON body for a `POST /kit/create_table` request. The body
+# forwards the column list as-is, so per-column keys like `enum_variants`
+# and `default_value` (the engine field name; the server also accepts
+# `default_expr`) survive the encode untouched. Extracted so the wire
+# shape can be asserted in a unit test without touching a socket.
+function _create_table_body(name::AbstractString, columns)::Dict
+    return Dict("name" => name, "columns" => columns)
 end
 
 """Drop a table by name."""

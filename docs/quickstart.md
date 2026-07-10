@@ -40,12 +40,21 @@ println(MongrelDB.health(db))   # true
 ## Create a table and insert rows
 
 ```julia
-# The daemon requires JSON booleans for primary_key / nullable.
+# The daemon requires JSON booleans for primary_key / nullable. Per-column
+# extras like `enum_variants` and `default_value` (a legacy alias for the
+# engine's `default_expr`) are passed through verbatim — the client does not
+# interpret them, so any key the engine accepts lands on the wire unchanged.
 T, F = true, false
 MongrelDB.createTable(db, "orders", [
-    Dict("id" => 1, "name" => "id",       "ty" => "int64",   "primary_key" => T, "nullable" => F),
-    Dict("id" => 2, "name" => "customer", "ty" => "varchar", "primary_key" => F, "nullable" => F),
-    Dict("id" => 3, "name" => "amount",   "ty" => "float64", "primary_key" => F, "nullable" => F),
+    Dict("id" => 1, "name" => "id",         "ty" => "int64",          "primary_key" => T, "nullable" => F),
+    Dict("id" => 2, "name" => "customer",   "ty" => "varchar",        "primary_key" => F, "nullable" => F),
+    Dict("id" => 3, "name" => "amount",     "ty" => "float64",        "primary_key" => F, "nullable" => F),
+    Dict("id" => 4, "name" => "status",     "ty" => "enum",
+         "enum_variants" => ["draft", "paid", "shipped"],
+         "primary_key" => F, "nullable" => F),
+    Dict("id" => 5, "name" => "created_at", "ty" => "timestamp_nanos",
+         "default_value" => "now",
+         "primary_key" => F, "nullable" => F),
 ])
 
 # Cells map column id to value.

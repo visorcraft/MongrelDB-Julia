@@ -93,3 +93,59 @@ end
     c3 = MongrelDB.connect("http://h:9"; username = "u", password = "p")
     @test startswith(c3.auth_header, "Basic ")
 end
+
+@testset "createTable wire shape" begin
+    # Regression case: a column without enum_variants or default_value must
+    # NOT carry those keys in the encoded JSON body. This catches an
+    # accidental future change that would inject an empty/None key.
+    T, F = true, false
+    plain_columns = [
+        Dict("id" => 1, "name" => "id",     "ty" => "int64",   "primary_key" => T, "nullable" => F),
+        Dict("id" => 2, "name" => "label",  "ty" => "varchar", "primary_key" => F, "nullable" => F),
+    ]
+    plain_body = MongrelDB._create_table_body("orders", plain_columns)
+    plain_json = JSON.encode(plain_body)
+    @test occursin("\"name\":\"orders\"", plain_json)
+    @test !occursin("enum_variants", plain_json)
+    @test !occursin("default_value", plain_json)
+    @test !occursin("default_expr", plain_json)
+
+    # When a column declares `enum_variants` and `default_value`, both keys
+    # must appear verbatim in the encoded JSON, with the variant list and
+    # the default expression preserved exactly. The server reads
+    # `enum_variants` for the enum type and accepts `default_value` as a
+    # legacy alias for `default_expr`; the client must not mangle or drop
+    # either.
+    fancy_columns = [
+        Dict("id" => 1, "name" => "id",         "ty" => "int64",          "primary_key" => T, "nullable" => F),
+        Dict("id" => 2, "name" => "status",     "ty" => "enum",
+             "enum_variants" => ["draft", "paid", "shipped"],
+             "primary_key" => F, "nullable" => F),
+        Dict("id" => 3, "name" => "created_at", "ty" => "timestamp_nanos",
+             "default_value" => "now",
+             "primary_key" => F, "nullable" => F),
+    ]
+    body = MongrelDB._create_table_body("events", fancy_columns)
+    json = JSON.encode(body)
+
+    # Both keys present verbatim (as JSON object keys, not substrings of
+    # values). The encoder quotes string keys, so the substring check
+    # `"enum_variants":` is exact.
+    @test occursin("\"enum_variants\":", json)
+    @test occursin("\"default_value\":\"now\"", json)
+    # Variant list is preserved in order.
+    @test occursin("[\"draft\",\"paid\",\"shipped\"]", json)
+    # The regression keys are still absent for the columns that did not set
+    # them, so the body stays minimal.
+    @test !occursin("default_expr", json)
+
+    # Round-trip decode: both keys survive the wire format on the way back
+    # too, so a server echoing the column would not lose them.
+    decoded = JSON.decode(json)
+    @test decoded["name"] == "events"
+    @test length(decoded["columns"]) == 3
+    status_col = decoded["columns"][2]
+    @test status_col["enum_variants"] == ["draft", "paid", "shipped"]
+    created_col = decoded["columns"][3]
+    @test created_col["default_value"] == "now"
+end

@@ -43,7 +43,11 @@ function _encode_segment(seg::AbstractString)::String
            c == '-' || c == '_' || c == '.' || c == '~'
             write(out, c)
         else
-            for b in codeunits(String(c))
+            # Encode every byte of the character's UTF-8 representation.
+            # `String(c)` does not exist (it rejects a Char); `string(c)`
+            # produces the single-character String whose codeunits are the
+            # raw UTF-8 bytes, so each byte is percent-encoded correctly.
+            for b in codeunits(string(c))
                 write(out, '%', uppercase(string(b, base=16, pad=2)))
             end
         end

@@ -55,6 +55,12 @@ db = MongrelDB.connect("http://127.0.0.1:8453")
 T, F = true, false
 
 # Create a table.
+checks = Dict("checks" => [Dict(
+    "id" => 1,
+    "name" => "id_present",
+    "expr" => Dict("IsNotNull" => 1),
+)])
+
 MongrelDB.createTable(db, "orders", [
     Dict("id" => 1, "name" => "id",         "ty" => "int64",          "primary_key" => T, "nullable" => F),
     Dict("id" => 2, "name" => "customer",   "ty" => "varchar",        "primary_key" => F, "nullable" => F),
@@ -65,7 +71,7 @@ MongrelDB.createTable(db, "orders", [
     Dict("id" => 5, "name" => "created_at", "ty" => "timestamp_nanos",
          "default_value" => "now",
          "primary_key" => F, "nullable" => F),
-])
+]; constraints=checks)
 
 # Insert rows. Cells map column id to value.
 MongrelDB.put(db, "orders", Dict(1 => 1, 2 => "Alice", 3 => 99.50))
@@ -222,7 +228,7 @@ end
 |---|---|
 | `health(client)` | Check daemon health |
 | `tables(client)` | List table names |
-| `createTable(client, name, columns)` | Create a table, returns table id |
+| `createTable(client, name, columns; constraints=nothing)` | Create a table, optionally attach engine constraints; returns table id |
 | `dropTable(client, name)` | Drop a table |
 | `count(client, table)` | Row count |
 | `put(client, table, cells)` | Insert a row |

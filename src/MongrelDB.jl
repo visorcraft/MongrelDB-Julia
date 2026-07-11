@@ -383,10 +383,10 @@ function tables(client::Client)::Vector{String}
     data isa AbstractVector ? collect(String, data) : String[]
 end
 
-"""Create a table. Returns the new table id, or 0 if none was reported."""
-function createTable(client::Client, name::String, columns)::Int
+"""Create a table. Pass `constraints` for engine checks. Returns the table id."""
+function createTable(client::Client, name::String, columns; constraints=nothing)::Int
     data = _request(client, "POST", "kit/create_table",
-        _create_table_body(name, columns))
+        _create_table_body(name, columns; constraints=constraints))
     data isa Dict ? Int(get(data, "table_id", 0)) : 0
 end
 
@@ -395,8 +395,10 @@ end
 # and `default_value` (the engine field name; the server also accepts
 # `default_expr`) survive the encode untouched. Extracted so the wire
 # shape can be asserted in a unit test without touching a socket.
-function _create_table_body(name::AbstractString, columns)::Dict
-    return Dict("name" => name, "columns" => columns)
+function _create_table_body(name::AbstractString, columns; constraints=nothing)::Dict
+    body = Dict("name" => name, "columns" => columns)
+    constraints === nothing || (body["constraints"] = constraints)
+    return body
 end
 
 """Drop a table by name."""

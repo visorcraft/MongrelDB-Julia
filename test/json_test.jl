@@ -125,7 +125,13 @@ end
              "default_value" => "now",
              "primary_key" => F, "nullable" => F),
     ]
-    body = MongrelDB._create_table_body("events", fancy_columns)
+    constraints = Dict("checks" => [Dict(
+        "id" => 1,
+        "name" => "id_present",
+        "expr" => Dict("IsNotNull" => 1),
+    )])
+    body = MongrelDB._create_table_body("events", fancy_columns;
+        constraints=constraints)
     json = JSON.encode(body)
 
     # Both keys present verbatim (as JSON object keys, not substrings of
@@ -148,4 +154,5 @@ end
     @test status_col["enum_variants"] == ["draft", "paid", "shipped"]
     created_col = decoded["columns"][3]
     @test created_col["default_value"] == "now"
+    @test decoded["constraints"]["checks"][1]["name"] == "id_present"
 end

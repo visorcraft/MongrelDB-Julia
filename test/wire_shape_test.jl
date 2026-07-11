@@ -72,7 +72,9 @@ end
         "primary_key" => false,
         "nullable" => true,
     )
-    body = MongrelDB._create_table_body("widgets", [col])
+    body = MongrelDB._create_table_body("widgets", [col]; constraints=Dict(
+        "checks" => [Dict("name" => "id_present")],
+    ))
     json = JSON.encode(body)
 
     @test occursin("\"default_value\":\"0.0\"", json)
@@ -82,4 +84,5 @@ end
     # Round-trip: default_value survives decode unchanged.
     decoded = JSON.decode(json)
     @test decoded["columns"][1]["default_value"] == "0.0"
+    @test decoded["constraints"]["checks"][1]["name"] == "id_present"
 end

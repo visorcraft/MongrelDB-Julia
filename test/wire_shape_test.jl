@@ -89,4 +89,8 @@ end
     @test decoded["columns"][1]["default_value"] == 3
     @test decoded["columns"][2]["default_expr"] == "now"
     @test decoded["constraints"]["checks"][1]["name"] == "id_present"
+    for (value, expected) in (("draft", "\"draft\""), (true, "true"), (nothing, "null"))
+        scalar = JSON.encode(MongrelDB._create_table_body("x", [Dict("default_value" => value)]))
+        @test occursin("\"default_value\":" * expected, scalar)
+    end
 end

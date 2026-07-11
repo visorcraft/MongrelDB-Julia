@@ -27,7 +27,8 @@ import .JSON
 
 export Client, MongrelDBError, connect, condition, health, tables, createTable, dropTable,
        count, put, upsert, delete, deleteByPk, sql, query, schema, schemaFor,
-       transaction, JSON
+       transaction, setHistoryRetentionEpochs, historyRetention,
+       historyRetentionEpochs, earliestRetainedEpoch, JSON
 
 # ---------------------------------------------------------------------------
 # URL helpers
@@ -382,6 +383,18 @@ function tables(client::Client)::Vector{String}
     data = _request(client, "GET", "tables")
     data isa AbstractVector ? collect(String, data) : String[]
 end
+
+function _history_retention(data)
+    data isa Dict || throw(MongrelDBError(:query, "malformed history retention response"))
+    (history_retention_epochs=Int(data["history_retention_epochs"]),
+     earliest_retained_epoch=Int(data["earliest_retained_epoch"]))
+end
+
+historyRetention(client::Client) = _history_retention(_request(client, "GET", "history/retention"))
+setHistoryRetentionEpochs(client::Client, epochs::Integer) = _history_retention(
+    _request(client, "PUT", "history/retention", Dict("history_retention_epochs" => epochs)))
+historyRetentionEpochs(client::Client) = historyRetention(client).history_retention_epochs
+earliestRetainedEpoch(client::Client) = historyRetention(client).earliest_retained_epoch
 
 """Create a table. Pass `constraints` for engine checks. Returns the table id."""
 function createTable(client::Client, name::String, columns; constraints=nothing)::Int

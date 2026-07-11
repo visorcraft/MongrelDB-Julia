@@ -4,6 +4,8 @@
 
 <h1 align="center">MongrelDB Julia Client</h1>
 
+History retention: `setHistoryRetentionEpochs`, `historyRetentionEpochs`, and `earliestRetainedEpoch`.
+
 <p align="center">
   <b>Pure Julia client for MongrelDB, embedded and server database with SQL, vector search, full-text search, and AI-native retrieval.</b>
 </p>

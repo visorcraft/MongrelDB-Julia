@@ -343,8 +343,13 @@ function _request(client::Client, method::String, path::String,
         if isempty(message)
             message = "Server error ($status)"
         end
-        throw(MongrelDBError(kind_for_status(status), message, code,
-                             op_index, status))
+        effective_status = status
+        kind = kind_for_status(status)
+        if startswith(strip(message), "not found:")
+            kind = :not_found
+            effective_status = 404
+        end
+        throw(MongrelDBError(kind, message, code, op_index, effective_status))
     end
 
     isempty(body) && return nothing

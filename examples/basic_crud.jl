@@ -28,7 +28,7 @@ columns = [
          "enum_variants" => ["draft", "paid", "shipped"],
          "primary_key" => F, "nullable" => F),
     Dict("id" => 5, "name" => "created_at", "ty" => "timestamp_nanos",
-         "default_value" => "now",
+         "default_expr" => "now",
          "primary_key" => F, "nullable" => F),
 ]
 
@@ -38,7 +38,7 @@ try
     # Cells map column id to value. Column 4 (`status`) is set to one of the
     # declared `enum_variants`; column 5 (`created_at`) gets an explicit
     # integer nanos value here, even though the schema declares a
-    # `default_value => "now"` server-side (the engine's default only fires
+    # `default_expr => "now"` server-side (the engine's default only fires
     # for writes that *omit* the column, so a SQL `INSERT` without column 5
     # would let the default land at INSERT time).
     now_ns = UInt64(time() * 1e9)

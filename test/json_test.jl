@@ -7,6 +7,7 @@
 #   julia --project=. test/json_test.jl
 
 using MongrelDB
+using Sockets
 using Test
 
 @testset "JSON encode/decode" begin
@@ -155,4 +156,134 @@ end
     created_col = decoded["columns"][3]
     @test created_col["default_value"] == "now"
     @test decoded["constraints"]["checks"][1]["name"] == "id_present"
+end
+
+@testset "createTable static default matrix" begin
+    # Full scalar matrix: string, integer, boolean, explicit null, literal
+    # "now" string, and dynamic default_expr "now"/"uuid". Decoded request
+    # JSON must preserve each type and keep default_expr separate from
+    # default_value.
+    columns = [
+        Dict{String,Any}("id" => 1, "name" => "status",      "ty" => "varchar",         "default_value" => "draft"),
+        Dict{String,Any}("id" => 2, "name" => "score",       "ty" => "int64",           "default_value" => 7),
+        Dict{String,Any}("id" => 3, "name" => "active",      "ty" => "bool",            "default_value" => true),
+        Dict{String,Any}("id" => 4, "name" => "optional",    "ty" => "varchar",         "default_value" => nothing),
+        Dict{String,Any}("id" => 5, "name" => "literal_now", "ty" => "varchar",         "default_value" => "now"),
+        Dict{String,Any}("id" => 6, "name" => "created_at",  "ty" => "timestamp_nanos", "default_expr" => "now"),
+        Dict{String,Any}("id" => 7, "name" => "gen_uuid",    "ty" => "uuid",            "default_expr" => "uuid"),
+    ]
+    body = MongrelDB._create_table_body("defaults", columns)
+    decoded = JSON.decode(JSON.encode(body))
+    by_name = Dict(col["name"] => col for col in decoded["columns"])
+
+    @test by_name["status"]["default_value"] == "draft"
+    @test by_name["score"]["default_value"] == 7
+    @test by_name["active"]["default_value"] === true
+    @test by_name["optional"]["default_value"] === nothing
+    @test by_name["literal_now"]["default_value"] == "now"
+    @test by_name["created_at"]["default_expr"] == "now"
+    @test by_name["gen_uuid"]["default_expr"] == "uuid"
+
+    @test !haskey(by_name["created_at"], "default_value")
+    @test !haskey(by_name["gen_uuid"], "default_value")
+end
+
+# ---------------------------------------------------------------------------
+# Mock HTTP server helpers for transport tests (uses only stdlib Sockets).
+# ---------------------------------------------------------------------------
+
+# Read one HTTP request from a socket. Returns (method, path, body).
+function read_mock_request(sock)
+    status_line = chomp(readline(sock, keep=true))
+    parts = split(status_line)
+    method = String(parts[1])
+    path = String(parts[2])
+    content_length = 0
+    while true
+        h = chomp(readline(sock, keep=true))
+        isempty(h) && break
+        if startswith(lowercase(h), "content-length:")
+            content_length = parse(Int, strip(h[length("content-length:") + 1:end]))
+        end
+    end
+    body = content_length > 0 ? String(read(sock, content_length)) : ""
+    return method, path, body
+end
+
+# Run `handler(client)` against a one-shot HTTP server that returns the given
+# response. Returns (captured_request, handler_result). If the handler throws,
+# the exception is rethrown after the server shuts down.
+function run_mock_server(handler, response_status::Int, response_body::String)
+    server = Sockets.listen(Sockets.localhost, 0)
+    port = Int(Sockets.getsockname(server)[2])
+    captured = Ref{Any}(nothing)
+    client_task = @async begin
+        client = MongrelDB.connect("http://127.0.0.1:$port")
+        handler(client)
+    end
+    client_sock = Sockets.accept(server)
+    try
+        method, path, body = read_mock_request(client_sock)
+        captured[] = (method=method, path=path, body=body)
+        resp = "HTTP/1.1 $(response_status) OK\r\nContent-Type: application/json\r\nContent-Length: $(length(response_body))\r\nConnection: close\r\n\r\n" * response_body
+        write(client_sock, resp)
+    finally
+        close(client_sock)
+        close(server)
+    end
+    result = try
+        fetch(client_task)
+    catch e
+        # Julia wraps task failures in TaskFailedException; unwrap so callers
+        # see the original MongrelDBError (or other handler exception).
+        e isa TaskFailedException ? rethrow(e.task.exception) : rethrow(e)
+    end
+    return captured[], result
+end
+
+@testset "history retention transport: GET parses response keys" begin
+    response = JSON.encode(Dict("history_retention_epochs" => 7, "earliest_retained_epoch" => 3))
+    captured, result = run_mock_server(db -> MongrelDB.historyRetention(db), 200, response)
+    @test captured.method == "GET"
+    @test captured.path == "/history/retention"
+    @test captured.body == ""
+    @test result.history_retention_epochs == 7
+    @test result.earliest_retained_epoch == 3
+end
+
+@testset "history retention transport: getter convenience methods" begin
+    response = JSON.encode(Dict("history_retention_epochs" => 7, "earliest_retained_epoch" => 3))
+    _, epochs = run_mock_server(db -> MongrelDB.historyRetentionEpochs(db), 200, response)
+    @test epochs == 7
+    _, earliest = run_mock_server(db -> MongrelDB.earliestRetainedEpoch(db), 200, response)
+    @test earliest == 3
+end
+
+@testset "history retention transport: PUT body and response keys" begin
+    response = JSON.encode(Dict("history_retention_epochs" => 42, "earliest_retained_epoch" => 1))
+    captured, result = run_mock_server(db -> MongrelDB.setHistoryRetentionEpochs(db, 42), 200, response)
+    @test captured.method == "PUT"
+    @test captured.path == "/history/retention"
+    body = JSON.decode(captured.body)
+    @test body == Dict("history_retention_epochs" => 42)
+    @test result.history_retention_epochs == 42
+    @test result.earliest_retained_epoch == 1
+end
+
+@testset "history retention transport: non-2xx propagates" begin
+    err_body = JSON.encode(Dict("error" => Dict("message" => "unavailable", "code" => "UNAVAILABLE")))
+    for fn in (
+        db -> MongrelDB.historyRetentionEpochs(db),
+        db -> MongrelDB.earliestRetainedEpoch(db),
+        db -> MongrelDB.setHistoryRetentionEpochs(db, 7),
+    )
+        err = try
+            run_mock_server(fn, 503, err_body)
+            nothing
+        catch e
+            e
+        end
+        @test err isa MongrelDB.MongrelDBError
+        @test err.status == 503
+    end
 end

@@ -391,14 +391,23 @@ end
 
 function _history_retention(data)
     data isa Dict || throw(MongrelDBError(:query, "malformed history retention response"))
+    haskey(data, "history_retention_epochs") || throw(MongrelDBError(:query, "history retention response missing history_retention_epochs"))
+    haskey(data, "earliest_retained_epoch") || throw(MongrelDBError(:query, "history retention response missing earliest_retained_epoch"))
     (history_retention_epochs=Int(data["history_retention_epochs"]),
      earliest_retained_epoch=Int(data["earliest_retained_epoch"]))
 end
 
+"""Get the current history retention window and earliest retained epoch."""
 historyRetention(client::Client) = _history_retention(_request(client, "GET", "history/retention"))
+
+"""Set the history retention window and return the post-update state."""
 setHistoryRetentionEpochs(client::Client, epochs::Integer) = _history_retention(
     _request(client, "PUT", "history/retention", Dict("history_retention_epochs" => epochs)))
+
+"""Get the configured history retention window size in epochs."""
 historyRetentionEpochs(client::Client) = historyRetention(client).history_retention_epochs
+
+"""Get the earliest epoch still readable via `AS OF EPOCH` queries."""
 earliestRetainedEpoch(client::Client) = historyRetention(client).earliest_retained_epoch
 
 """Create a table. Pass `constraints` for engine checks. Returns the table id."""

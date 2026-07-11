@@ -40,6 +40,18 @@ else
         ]
     end
 
+    # Commit a single put through the raw txn endpoint so the commit epoch is
+    # available for AS OF EPOCH historical reads.
+    function commit_with_epoch(db, table, cells)
+        payload = Dict("ops" => [Dict("put" => Dict("table" => table, "cells" => MongrelDB.flatten_cells(cells)))])
+        data = MongrelDB._request(db, "POST", "kit/txn", payload)
+        epoch = data["epoch"]
+        results = data["results"]
+        result = isempty(results) ? Dict{String,Any}() :
+                 (results[1] isa Dict ? Dict{String,Any}(results[1]) : Dict{String,Any}())
+        return epoch, result
+    end
+
     @testset "live: health" begin
         db = MongrelDB.connect(SERVER_URL)
         @test MongrelDB.health(db) == true
@@ -177,5 +189,47 @@ else
         @test table in names
         desc = MongrelDB.schemaFor(db, table)
         @test !isempty(desc)
+    end
+
+    @testset "live: history retention and AS OF EPOCH reads" begin
+        db = MongrelDB.connect(SERVER_URL)
+        table = "julia_retention_" * unique_suffix
+
+        # Set a generous retention window so the insert epoch stays readable.
+        # If the daemon does not expose /history/retention, skip this testset
+        # rather than failing against an older server.
+        retention_supported = try
+            MongrelDB.setHistoryRetentionEpochs(db, 1_000_000)
+            true
+        catch e
+            e isa MongrelDB.MongrelDBError && e.status == 404 ? false : rethrow(e)
+        end
+        if !retention_supported
+            @test_skip "server does not expose /history/retention"
+        else
+            @test MongrelDB.historyRetentionEpochs(db) == 1_000_000
+
+            MongrelDB.createTable(db, table, make_columns())
+
+            # Insert at epoch e1, then update the same row at epoch e2.
+            e1, _ = commit_with_epoch(db, table, Dict(1 => 1, 2 => "alpha", 3 => 10.0))
+            @test e1 > 0
+            e2, _ = commit_with_epoch(db, table, Dict(1 => 1, 2 => "alpha", 3 => 99.0))
+            @test e2 > e1
+
+            # Current value reflects the update.
+            current = MongrelDB.sql(db, "SELECT amount FROM $table WHERE id = 1")
+            @test current[1]["amount"] == 99.0
+
+            # Historical value at the original commit epoch is still readable.
+            historical = MongrelDB.sql(db, "SELECT amount FROM $table AS OF EPOCH $e1 WHERE id = 1")
+            @test historical[1]["amount"] == 10.0
+
+            # Earliest retained epoch is a non-negative integer and not beyond the
+            # original insert epoch.
+            earliest = MongrelDB.earliestRetainedEpoch(db)
+            @test earliest isa Integer
+            @test earliest <= e1
+        end
     end
 end

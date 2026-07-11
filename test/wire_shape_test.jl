@@ -94,3 +94,41 @@ end
         @test occursin("\"default_value\":" * expected, scalar)
     end
 end
+
+@testset "wire shape: full static default matrix" begin
+    # The frozen Kit default contract requires that scalar default_value is
+    # sent with its JSON type preserved, explicit JSON null is distinct from
+    # an omitted field, and dynamic defaults use default_expr only.
+    columns = [
+        Dict{String,Any}("id" => 1, "name" => "status",      "ty" => "varchar",         "default_value" => "draft"),
+        Dict{String,Any}("id" => 2, "name" => "score",       "ty" => "int64",           "default_value" => 7),
+        Dict{String,Any}("id" => 3, "name" => "active",      "ty" => "bool",            "default_value" => true),
+        Dict{String,Any}("id" => 4, "name" => "optional",    "ty" => "varchar",         "default_value" => nothing),
+        Dict{String,Any}("id" => 5, "name" => "literal_now", "ty" => "varchar",         "default_value" => "now"),
+        Dict{String,Any}("id" => 6, "name" => "created_at",  "ty" => "timestamp_nanos", "default_expr" => "now"),
+        Dict{String,Any}("id" => 7, "name" => "gen_uuid",    "ty" => "uuid",            "default_expr" => "uuid"),
+    ]
+    body = MongrelDB._create_table_body("defaults", columns)
+    decoded = JSON.decode(JSON.encode(body))
+    by_name = Dict(col["name"] => col for col in decoded["columns"])
+
+    @test by_name["status"]["default_value"] == "draft"
+    @test by_name["score"]["default_value"] == 7
+    @test by_name["active"]["default_value"] === true
+    @test by_name["optional"]["default_value"] === nothing
+    @test by_name["literal_now"]["default_value"] == "now"
+    @test by_name["created_at"]["default_expr"] == "now"
+    @test by_name["gen_uuid"]["default_expr"] == "uuid"
+
+    # Dynamic-default columns must emit only default_expr, no default_value.
+    @test !haskey(by_name["created_at"], "default_value")
+    @test !haskey(by_name["gen_uuid"], "default_value")
+
+    # Columns without a default must not gain a default_value or default_expr key.
+    bare = MongrelDB._create_table_body("bare", [
+        Dict{String,Any}("id" => 1, "name" => "id", "ty" => "int64", "primary_key" => true, "nullable" => false),
+    ])
+    bare_decoded = JSON.decode(JSON.encode(bare))
+    @test !haskey(bare_decoded["columns"][1], "default_value")
+    @test !haskey(bare_decoded["columns"][1], "default_expr")
+end

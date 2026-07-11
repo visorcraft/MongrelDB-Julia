@@ -51,10 +51,14 @@ MongrelDB.createTable(db, "orders", [
     Dict("id" => 3, "name" => "amount",     "ty" => "float64",        "primary_key" => F, "nullable" => F),
     Dict("id" => 4, "name" => "status",     "ty" => "enum",
          "enum_variants" => ["draft", "paid", "shipped"],
+         "default_value" => "draft",
          "primary_key" => F, "nullable" => F),
     Dict("id" => 5, "name" => "created_at", "ty" => "timestamp_nanos",
-         "default_value" => "now",
+         "default_expr" => "now",
          "primary_key" => F, "nullable" => F),
+    Dict("id" => 6, "name" => "optional",   "ty" => "varchar",
+         "default_value" => nothing,
+         "primary_key" => F, "nullable" => T),
 ])
 
 # Cells map column id to value.
@@ -70,6 +74,22 @@ println(MongrelDB.count(db, "orders"))   # 2
 rows, _ = MongrelDB.query(db, "orders", [
     MongrelDB.condition("pk", Dict("value" => 1)),
 ])
+```
+
+## History retention and time travel
+
+Set how many epochs of history the daemon keeps, then query older snapshots
+with `AS OF EPOCH`. Increasing the window cannot bring back history that has
+already been garbage-collected.
+
+```julia
+MongrelDB.setHistoryRetentionEpochs(db, 1_000_000)
+
+MongrelDB.historyRetentionEpochs(db)  # => 1000000
+MongrelDB.earliestRetainedEpoch(db)   # => oldest readable epoch
+
+# Read the table as it existed at epoch 42.
+MongrelDB.sql(db, "SELECT * FROM orders AS OF EPOCH 42 WHERE id = 1")
 ```
 
 ## Next steps

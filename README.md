@@ -4,8 +4,6 @@
 
 <h1 align="center">MongrelDB Julia Client</h1>
 
-History retention: `setHistoryRetentionEpochs`, `historyRetentionEpochs`, and `earliestRetainedEpoch`.
-
 <p align="center">
   <b>Pure Julia client for MongrelDB, embedded and server database with SQL, vector search, full-text search, and AI-native retrieval.</b>
 </p>
@@ -37,6 +35,8 @@ History retention: `setHistoryRetentionEpochs`, `historyRetentionEpochs`, and `e
 - **Schema management**: typed table creation, full schema catalog, and per-table descriptors.
 - **Sockets transport** built on a standard-library module, so there are no external package dependencies to install.
 - **Typed exception type** (`MongrelDBError`) with a `kind` field: `auth` (401/403), `not_found` (404), `constraint` (409, with error code and op index), `connection` (network), and `query` (everything else).
+- **History retention control**: `setHistoryRetentionEpochs`, `historyRetentionEpochs`, and `earliestRetainedEpoch` expose the daemon's `GET`/`PUT /history/retention` contract.
+- **Static column defaults**: scalar `default_value` (string, integer, boolean, explicit JSON `null`) and dynamic `default_expr` (`"now"`, `"uuid"`) are forwarded with their JSON types preserved.
 - **Robust JSON handling**: NaN and Infinity raise a clear error instead of corrupting data; malformed UTF-8 is passed through so the daemon can substitute it.
 
 ## Examples
@@ -69,9 +69,10 @@ MongrelDB.createTable(db, "orders", [
     Dict("id" => 3, "name" => "amount",     "ty" => "float64",        "primary_key" => F, "nullable" => F),
     Dict("id" => 4, "name" => "status",     "ty" => "enum",
          "enum_variants" => ["draft", "paid", "shipped"],
+         "default_value" => "draft",
          "primary_key" => F, "nullable" => F),
     Dict("id" => 5, "name" => "created_at", "ty" => "timestamp_nanos",
-         "default_value" => "now",
+         "default_expr" => "now",
          "primary_key" => F, "nullable" => F),
 ]; constraints=checks)
 
@@ -91,6 +92,22 @@ println(MongrelDB.count(db, "orders"))   # 2
 
 # Run SQL.
 MongrelDB.sql(db, "UPDATE orders SET amount = 200.0 WHERE customer = 'Bob'")
+```
+
+## History retention
+
+Control how many epochs of history the daemon keeps for time-travel queries.
+Setting a larger window cannot restore history that has already been pruned.
+
+```julia
+# Keep one million epochs of history.
+MongrelDB.setHistoryRetentionEpochs(db, 1_000_000)
+
+MongrelDB.historyRetentionEpochs(db)  # current window size
+MongrelDB.earliestRetainedEpoch(db)   # oldest epoch still readable
+
+# Read a table as it existed at an earlier epoch.
+MongrelDB.sql(db, "SELECT amount FROM orders AS OF EPOCH 42 WHERE id = 1")
 ```
 
 ## Auth
@@ -239,6 +256,10 @@ end
 | `deleteByPk(client, table, pk)` | Delete by primary key |
 | `query(client, table, conditions; projection, limit)` | Run a native query |
 | `sql(client, statement)` | Execute SQL |
+| `historyRetention(client)` | Get both retention values as a named tuple |
+| `setHistoryRetentionEpochs(client, epochs)` | Set the history retention window |
+| `historyRetentionEpochs(client)` | Current retention window size |
+| `earliestRetainedEpoch(client)` | Oldest readable epoch |
 | `schema(client)` | Full schema catalog |
 | `schemaFor(client, table)` | Single table schema |
 | `transaction(client, ops, idempotency_key)` | Commit a batch atomically |

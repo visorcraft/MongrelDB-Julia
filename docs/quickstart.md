@@ -41,8 +41,8 @@ println(MongrelDB.health(db))   # true
 
 ```julia
 # The daemon requires JSON booleans for primary_key / nullable. Per-column
-# extras like `enum_variants` and `default_value` (a legacy alias for the
-# engine's `default_expr`) are passed through verbatim — the client does not
+# extras like `enum_variants`, scalar `default_value`, and dynamic
+# `default_expr` are passed through verbatim — the client does not
 # interpret them, so any key the engine accepts lands on the wire unchanged.
 T, F = true, false
 MongrelDB.createTable(db, "orders", [

@@ -61,28 +61,32 @@ end
 end
 
 @testset "wire shape: default_value column" begin
-    # A column declaring default_value (the engine field; the server also
-    # accepts default_expr as a legacy alias) must serialize it verbatim and
+    # Static and dynamic defaults must serialize verbatim and
     # must NOT inject enum_variants when not set.
     col = Dict{String,Any}(
         "id" => 3,
         "name" => "score",
         "ty" => "float64",
-        "default_value" => "0.0",
+        "default_value" => 3,
         "primary_key" => false,
         "nullable" => true,
     )
-    body = MongrelDB._create_table_body("widgets", [col]; constraints=Dict(
+    dynamic = Dict{String,Any}(
+        "id" => 4, "name" => "created_at", "ty" => "timestamp_nanos",
+        "default_expr" => "now",
+    )
+    body = MongrelDB._create_table_body("widgets", [col, dynamic]; constraints=Dict(
         "checks" => [Dict("name" => "id_present")],
     ))
     json = JSON.encode(body)
 
-    @test occursin("\"default_value\":\"0.0\"", json)
+    @test occursin("\"default_value\":3", json)
+    @test occursin("\"default_expr\":\"now\"", json)
     @test !occursin("enum_variants", json)
-    @test !occursin("default_expr", json)
 
     # Round-trip: default_value survives decode unchanged.
     decoded = JSON.decode(json)
-    @test decoded["columns"][1]["default_value"] == "0.0"
+    @test decoded["columns"][1]["default_value"] == 3
+    @test decoded["columns"][2]["default_expr"] == "now"
     @test decoded["constraints"]["checks"][1]["name"] == "id_present"
 end

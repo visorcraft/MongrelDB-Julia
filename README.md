@@ -254,7 +254,7 @@ end
 | `upsert(client, table, cells, update)` | Upsert a row |
 | `delete(client, table, rowId)` | Delete by row ID |
 | `deleteByPk(client, table, pk)` | Delete by primary key |
-| `query(client, table, conditions; projection, limit)` | Run a native query |
+| `query(client, table, conditions; projection, limit, offset)` | Run a paged native query |
 | `sql(client, statement)` | Execute SQL |
 | `historyRetention(client)` | Get both retention values as a named tuple |
 | `setHistoryRetentionEpochs(client, epochs)` | Set the history retention window |

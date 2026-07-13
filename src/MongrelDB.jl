@@ -492,7 +492,7 @@ function sql(client::Client, statement::String)
 end
 
 """
-    query(client, table, conditions=Dict[]; projection=nothing, limit=nothing)
+    query(client, table, conditions=Dict[]; projection=nothing, limit=nothing, offset=nothing)
 
 Run a native query. `conditions` is a vector of `Dict(type => params)` (see
 [`condition`](@ref)). Returns `(rows, truncated)`.
@@ -500,13 +500,15 @@ Run a native query. `conditions` is a vector of `Dict(type => params)` (see
 function query(client::Client, table::String,
                conditions::AbstractVector=Dict[];
                projection::Union{AbstractVector,Nothing}=nothing,
-               limit::Union{Int,Nothing}=nothing)::Tuple{Vector,Bool}
+               limit::Union{Int,Nothing}=nothing,
+               offset::Union{Int,Nothing}=nothing)::Tuple{Vector,Bool}
     payload = Dict{String,Any}("table" => table)
     if !isempty(conditions)
         payload["conditions"] = collect(conditions)
     end
     projection !== nothing && (payload["projection"] = collect(projection))
     limit !== nothing && (payload["limit"] = limit)
+    offset !== nothing && (payload["offset"] = offset)
     data = _request(client, "POST", "kit/query", payload)
     data isa Dict || return (Any[], false)
     rows = get(data, "rows", Any[])

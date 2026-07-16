@@ -1,7 +1,7 @@
 name = "MongrelDB"
 uuid = "a3b1c2d4-e5f6-7890-abcd-ef0123456789"
 authors = ["Visorcraft <noreply@visorcraft.com>"]
-version = "0.58.2"
+version = "0.58.3"
 
 [deps]
 # Sockets is a Julia standard library (not part of Base), so it must be listed

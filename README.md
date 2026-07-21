@@ -247,7 +247,7 @@ end
 |---|---|
 | `health(client)` | Check daemon health |
 | `tables(client)` | List table names |
-| `createTable(client, name, columns; constraints=nothing)` | Create a table, optionally attach engine constraints; returns table id |
+| `createTable(client, name, columns; constraints=nothing, indexes=nothing)` | Create a table with optional constraints and all index definitions |
 | `dropTable(client, name)` | Drop a table |
 | `count(client, table)` | Row count |
 | `put(client, table, cells)` | Insert a row |

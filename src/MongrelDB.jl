@@ -411,9 +411,9 @@ historyRetentionEpochs(client::Client) = historyRetention(client).history_retent
 earliestRetainedEpoch(client::Client) = historyRetention(client).earliest_retained_epoch
 
 """Create a table. Pass `constraints` for engine checks. Returns the table id."""
-function createTable(client::Client, name::String, columns; constraints=nothing)::Int
+function createTable(client::Client, name::String, columns; constraints=nothing, indexes=nothing)::Int
     data = _request(client, "POST", "kit/create_table",
-        _create_table_body(name, columns; constraints=constraints))
+        _create_table_body(name, columns; constraints=constraints, indexes=indexes))
     data isa Dict ? Int(get(data, "table_id", 0)) : 0
 end
 
@@ -422,9 +422,10 @@ end
 # and `default_value` (the engine field name; the server also accepts
 # `default_expr`) survive the encode untouched. Extracted so the wire
 # shape can be asserted in a unit test without touching a socket.
-function _create_table_body(name::AbstractString, columns; constraints=nothing)::Dict
+function _create_table_body(name::AbstractString, columns; constraints=nothing, indexes=nothing)::Dict
     body = Dict("name" => name, "columns" => columns)
     constraints === nothing || (body["constraints"] = constraints)
+    indexes === nothing || (body["indexes"] = indexes)
     return body
 end
 

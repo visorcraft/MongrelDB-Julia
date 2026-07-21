@@ -132,3 +132,19 @@ end
     @test !haskey(bare_decoded["columns"][1], "default_value")
     @test !haskey(bare_decoded["columns"][1], "default_expr")
 end
+
+@testset "wire shape: ANN backend options" begin
+    indexes = [Dict{String,Any}(
+        "name" => "ann", "column_id" => 2, "kind" => "ann",
+        "options" => Dict("ann" => Dict(
+            "algorithm" => "diskann", "quantization" => "dense",
+            "diskann" => Dict("r" => 64, "l" => 128, "beam_width" => 8, "alpha" => 120),
+        )),
+    )]
+    body = MongrelDB._create_table_body("vectors", Any[]; indexes=indexes)
+    decoded = JSON.decode(JSON.encode(body))
+    ann = decoded["indexes"][1]["options"]["ann"]
+    @test ann["algorithm"] == "diskann"
+    @test ann["quantization"] == "dense"
+    @test ann["diskann"]["beam_width"] == 8
+end

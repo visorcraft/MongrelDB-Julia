@@ -5,5 +5,6 @@
 
 include("json_test.jl")
 include("wire_shape_test.jl")
+include("durable_retrieve_test.jl")
 
 include("live_test.jl")

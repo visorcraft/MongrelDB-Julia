@@ -28,7 +28,9 @@ import .JSON
 export Client, MongrelDBError, connect, condition, health, tables, createTable, dropTable,
        count, put, upsert, delete, deleteByPk, sql, query, schema, schemaFor,
        transaction, setHistoryRetentionEpochs, historyRetention,
-       historyRetentionEpochs, earliestRetainedEpoch, JSON
+       historyRetentionEpochs, earliestRetainedEpoch, JSON,
+       CommitHlc, DurableOutcome, QueryStatus, parse_commit_hlc, parse_query_status,
+       commit_hlc, serialization_state, retrieve_text, query_status, cancel_query
 
 # ---------------------------------------------------------------------------
 # URL helpers
@@ -478,6 +480,159 @@ function deleteByPk(client::Client, table::String, pk)
         Dict("ops" => [Dict("delete_by_pk" =>
             Dict("table" => table, "pk" => pk))]))
     return nothing
+end
+
+"""Structural HLC from durable recovery (0.64+)."""
+struct CommitHlc
+    physical_micros::UInt64
+    logical::UInt32
+    node_tiebreaker::UInt32
+end
+
+function parse_commit_hlc(raw)::Union{CommitHlc,Nothing}
+    raw isa AbstractDict || return nothing
+    phys = get(raw, "physical_micros", nothing)
+    phys === nothing && return nothing
+    logical = get(raw, "logical", 0)
+    node = get(raw, "node_tiebreaker", 0)
+    return CommitHlc(UInt64(phys), UInt32(logical), UInt32(node))
+end
+
+"""Nested durable recovery payload."""
+struct DurableOutcome
+    committed::Union{Bool,Nothing}
+    committed_statements::Union{Int,Nothing}
+    last_commit_epoch::Union{Int,Nothing}
+    last_commit_epoch_text::Union{String,Nothing}
+    last_commit_hlc::Union{CommitHlc,Nothing}
+    serialization::String
+    serialization_state::Union{String,Nothing}
+    terminal_state::Union{String,Nothing}
+end
+
+function parse_durable_outcome(raw)::DurableOutcome
+    raw isa AbstractDict || (raw = Dict{String,Any}())
+    committed = haskey(raw, "committed") ? raw["committed"] : nothing
+    if committed !== nothing
+        committed = committed === true || committed == true
+    end
+    return DurableOutcome(
+        committed,
+        _maybe_int(get(raw, "committed_statements", nothing)),
+        _maybe_int(get(raw, "last_commit_epoch", nothing)),
+        _maybe_str(get(raw, "last_commit_epoch_text", nothing)),
+        parse_commit_hlc(get(raw, "last_commit_hlc", nothing)),
+        string(get(raw, "serialization", "")),
+        _maybe_str(get(raw, "serialization_state", nothing)),
+        _maybe_str(get(raw, "terminal_state", nothing)),
+    )
+end
+
+_maybe_int(x) = x === nothing ? nothing : Int(x)
+_maybe_str(x) = x === nothing ? nothing : string(x)
+
+"""GET /queries/{query_id} decoded status for durable recovery."""
+struct QueryStatus
+    query_id::String
+    status::String
+    state::String
+    server_state::String
+    terminal_state::Union{String,Nothing}
+    committed::Union{Bool,Nothing}
+    last_commit_epoch::Union{Int,Nothing}
+    last_commit_hlc::Union{CommitHlc,Nothing}
+    outcome::DurableOutcome
+    durable::Union{DurableOutcome,Nothing}
+    raw::Dict{String,Any}
+end
+
+function parse_query_status(raw)::QueryStatus
+    raw isa AbstractDict || (raw = Dict{String,Any}())
+    d = Dict{String,Any}(string(k) => v for (k, v) in pairs(raw))
+    committed = haskey(d, "committed") ? d["committed"] : nothing
+    if committed !== nothing
+        committed = committed === true || committed == true
+    end
+    durable_raw = get(d, "durable", nothing)
+    durable = durable_raw isa AbstractDict ? parse_durable_outcome(durable_raw) : nothing
+    return QueryStatus(
+        string(get(d, "query_id", "")),
+        string(get(d, "status", "")),
+        string(get(d, "state", "")),
+        string(get(d, "server_state", get(d, "state", ""))),
+        _maybe_str(get(d, "terminal_state", nothing)),
+        committed,
+        _maybe_int(get(d, "last_commit_epoch", nothing)),
+        parse_commit_hlc(get(d, "last_commit_hlc", nothing)),
+        parse_durable_outcome(get(d, "outcome", nothing)),
+        durable,
+        d,
+    )
+end
+
+"""Authoritative HLC: durable → outcome → top-level."""
+function commit_hlc(s::QueryStatus)::Union{CommitHlc,Nothing}
+    if s.durable !== nothing && s.durable.last_commit_hlc !== nothing
+        return s.durable.last_commit_hlc
+    end
+    if s.outcome.last_commit_hlc !== nothing
+        return s.outcome.last_commit_hlc
+    end
+    return s.last_commit_hlc
+end
+
+function serialization_state(s::QueryStatus)::String
+    if s.durable !== nothing
+        if s.durable.serialization_state !== nothing && !isempty(s.durable.serialization_state)
+            return s.durable.serialization_state
+        end
+        if !isempty(s.durable.serialization)
+            return s.durable.serialization
+        end
+    end
+    if s.outcome.serialization_state !== nothing && !isempty(s.outcome.serialization_state)
+        return s.outcome.serialization_state
+    end
+    return s.outcome.serialization
+end
+
+"""Text → embed → ANN retrieve (POST kit/retrieve_text, 0.64+)."""
+function retrieve_text(client::Client, table::String, embedding_column::Integer, text::String;
+                       k::Union{Int,Nothing}=nothing,
+                       deadline_ms::Union{Int,Nothing}=nothing,
+                       max_work::Union{Int,Nothing}=nothing)
+    isempty(table) && throw(MongrelDBError(:query, "table is required"))
+    isempty(text) && throw(MongrelDBError(:query, "text is required"))
+    payload = Dict{String,Any}(
+        "table" => table,
+        "embedding_column" => Int(embedding_column),
+        "text" => text,
+    )
+    k !== nothing && (payload["k"] = k)
+    deadline_ms !== nothing && (payload["deadline_ms"] = deadline_ms)
+    max_work !== nothing && (payload["max_work"] = max_work)
+    data = _request(client, "POST", "kit/retrieve_text", payload)
+    data isa Dict || return Dict("hits" => Any[], "provenance" => Dict{String,Any}())
+    return Dict(
+        "hits" => get(data, "hits", Any[]),
+        "provenance" => get(data, "provenance", Dict{String,Any}()),
+    )
+end
+
+"""Retained SQL status for durable recovery (GET queries/{query_id})."""
+function query_status(client::Client, query_id::String)::QueryStatus
+    isempty(query_id) && throw(MongrelDBError(:query, "query_id is required"))
+    data = _request(client, "GET", "queries/" * _encode_segment(query_id))
+    data isa Dict || throw(MongrelDBError(:query, "query status response was not a JSON object"))
+    return parse_query_status(data)
+end
+
+"""Request cancellation of a running SQL query."""
+function cancel_query(client::Client, query_id::String)
+    isempty(query_id) && throw(MongrelDBError(:query, "query_id is required"))
+    data = _request(client, "POST", "queries/" * _encode_segment(query_id) * "/cancel",
+        Dict{String,Any}())
+    return data isa Dict ? data : Dict{String,Any}()
 end
 
 """

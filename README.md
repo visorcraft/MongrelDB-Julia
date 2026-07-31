@@ -9,7 +9,6 @@
 </p>
 
 <p align="center">
-  <a href="https://juliahub.com/ui/Packages/MongrelDB"><img src="https://img.shields.io/badge/JuliaHub-MongrelDB-9558b2.svg" alt="JuliaHub" /></a>
   <a href="https://julialang.org/"><img src="https://img.shields.io/badge/Julia-%3E%3D1.9-9558b2.svg" alt="Julia" /></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License" /></a>
 </p>
@@ -18,7 +17,11 @@
 
 | Surface | Package | Install |
 |---|---|---|
-| Julia client | `MongrelDB` | `julia -e 'using Pkg; Pkg.develop(path=".")'` |
+| Julia client | `MongrelDB` | `julia -e 'using Pkg; Pkg.add(url="https://github.com/visorcraft/MongrelDB-Julia.git")'` |
+
+The package is not in the General registry yet, so install it straight from
+the git URL (or `] add https://github.com/visorcraft/MongrelDB-Julia.git`
+from the Pkg REPL).
 
 ## Requirements
 

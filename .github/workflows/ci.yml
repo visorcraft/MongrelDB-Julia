@@ -14,7 +14,8 @@ permissions:
 jobs:
   unit:
     name: Unit (Julia ${{ matrix.julia }})
-    runs-on: ubuntu-latest
+    # Julia 1.9's libopenlibm does not load on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
